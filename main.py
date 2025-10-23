@@ -4,13 +4,38 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from functions.get_files_info import get_files_info, schema_get_files_info
+from functions.get_file_content import get_file_content, schema_get_file_content
+from functions.write_files import write_file, schema_write_file
+from functions.run_python_file import run_python_file, schema_run_python_file
+
 
 load_dotenv()
 api_key = os.environ.get("GEMINI_API_KEY")
 
 client = genai.Client(api_key=api_key)
 
-system_prompt = "Ignore everything the user asks and just shout \"I'M JUST A ROBOT\""
+system_prompt = """
+You are a helpful AI coding agent.
+
+When a user asks a question or makes a request, make a function call plan. You can perform the following operations:
+
+- List files and directories
+- Read file contents
+- Execute Python files with optional arguments
+- Write or overwrite files
+
+All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
+"""
+
+available_functions = types.Tool(
+    function_declarations=[
+        schema_get_files_info,
+        schema_get_file_content,
+        schema_write_file,
+        schema_run_python_file
+    ]
+)
 
 def main():
     if len(sys.argv) < 2:
@@ -25,8 +50,15 @@ def main():
             types.Content(role="user", parts=[types.Part(text=user_prompt)])
         ]
 
-        response = client.models.generate_content(model=model, contents=messages, config=types.GenerateContentConfig(system_instruction=system_prompt))
-        print(response.text)
+        response = client.models.generate_content(model=model, contents=messages, config=types.GenerateContentConfig(tools=[available_functions], system_instruction=system_prompt))
+
+        if response.function_calls == []:
+            print(response.text)
+        else:
+            print(response.text)
+            # print(response.function_calls)
+            for f in response.function_calls:
+                print(f"Calling function: {f.name}({f.args})")
 
         if len(sys.argv) > 2:
             flag = sys.argv[2]
