@@ -37,6 +37,41 @@ available_functions = types.Tool(
     ]
 )
 
+functions_dict = {
+    "get_file_content": get_file_content,
+    "get_files_info": get_files_info,
+    "run_python_file": run_python_file,
+    "write_file": write_file
+}
+
+def call_function(function_call_part, verbose=False):
+    function_name = function_call_part.name
+    function_call_part.args["working_directory"] = "./calculator"
+    if verbose == True:
+        print(f"Calling function: {function_call_part.name}({function_call_part.args})")
+    else: print(f" - Calling function: {function_call_part.name}")
+    if function_call_part.name in functions_dict:
+        function_result = functions_dict[function_call_part.name](**function_call_part.args)
+        return types.Content(
+            role="tool",
+            parts=[
+                types.Part.from_function_response(
+                    name=function_name,
+                    response={"result": function_result},
+                )
+            ],
+        )
+    else:
+        return types.Content(
+            role="tool",
+            parts=[
+                types.Part.from_function_response(
+                    name=function_name,
+                    response={"error": f"Unknown function: {function_name}"},
+                )
+            ],
+        )
+
 def main():
     if len(sys.argv) < 2:
         print('Usage: uv run main.py <"prompt">')
@@ -52,13 +87,19 @@ def main():
 
         response = client.models.generate_content(model=model, contents=messages, config=types.GenerateContentConfig(tools=[available_functions], system_instruction=system_prompt))
 
-        if response.function_calls == []:
+        if response.function_calls == None:
             print(response.text)
         else:
-            print(response.text)
-            # print(response.function_calls)
             for f in response.function_calls:
-                print(f"Calling function: {f.name}({f.args})")
+                if len(sys.argv) > 2:
+                    flag = sys.argv[2]
+                    if flag == "--verbose":
+                        function_call_result = call_function(f, verbose=True)
+                else: function_call_result = call_function(f)
+                if function_call_result.parts[0].function_response.response == None:
+                    raise Exception
+                else:
+                    print(f"-> {function_call_result.parts[0].function_response.response}")
 
         if len(sys.argv) > 2:
             flag = sys.argv[2]
